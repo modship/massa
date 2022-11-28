@@ -269,7 +269,7 @@ impl BootstrapServer {
                                 },
                                 Err(BootstrapError::ReceivedError(error)) => debug!("bootstrap serving error received from peer {}: {}", remote_addr, error),
                                 Err(err) => {
-                                    debug!("bootstrap serving error for peer {}: {}", remote_addr, err);
+                                    debug!("bootstrap serving error for peer {}: {}", remote_addr, err.to_string());
                                     // We allow unused result because we don't care if an error is thrown when sending the error message to the server we will close the socket anyway.
                                     let _ = tokio::time::timeout(config.write_error_timeout.into(), server.send(BootstrapServerMessage::BootstrapError { error: err.to_string() })).await;
                                 },
@@ -355,23 +355,27 @@ pub async fn stream_bootstrap_information(
                 .get_executed_ops_part(last_ops_step);
             exec_ops_part = ops_data;
 
-            if let Some(slot) = last_slot && slot != final_state_read.slot {
-                if slot > final_state_read.slot {
-                    return Err(BootstrapError::GeneralError(
-                        "Bootstrap cursor set to future slot".to_string(),
-                    ));
+           final_state_changes = if let Some(slot) = last_slot  {
+                if slot != final_state_read.slot {
+                    if slot > final_state_read.slot {
+                        return Err(BootstrapError::GeneralError(
+                            "Bootstrap cursor set to future slot".to_string(),
+                        ));
+                    }
+                   final_state_read.get_state_changes_part(
+                        slot,
+                        new_ledger_step.clone(),
+                        new_pool_step,
+                        new_cycle_step,
+                        new_credits_step,
+                        new_ops_step,
+                    )?
+                } else {
+                    Vec::new()
                 }
-                final_state_changes = final_state_read.get_state_changes_part(
-                    slot,
-                    new_ledger_step.clone(),
-                    new_pool_step,
-                    new_cycle_step,
-                    new_credits_step,
-                    new_ops_step,
-                )?;
             } else {
-                final_state_changes = Vec::new();
-            }
+                Vec::new()
+            };
 
             // Update cursors for next turn
             last_ledger_step = new_ledger_step;
